@@ -318,6 +318,35 @@ describe("the verify action", () => {
     }
   });
 
+  it("fails up front, naming it, when the image lacks a tool the pack path needs", async () => {
+    const check = await script("verify", "Check the inputs");
+    // A PATH with bash and the tools the pack path needs, except tar.
+    const bin = await mkdtemp(join(tmpdir(), "hm-sdk-ci-tools-"));
+    try {
+      for (const tool of ["bash", "sha256sum", "cut", "gzip"]) {
+        const path = execFileSync("bash", ["-c", `command -v ${tool}`], {
+          encoding: "utf8",
+        }).trim();
+        await writeFile(join(bin, tool), `#!/bin/sh\nexec ${path} "$@"\n`);
+        await chmod(join(bin, tool), 0o755);
+      }
+      await expect(
+        bash(check, {}, { CACHE: "false", PACK: "true", PATH: bin }),
+      ).resolves.toMatchObject({
+        code: 1,
+        stdout: expect.stringContaining("title=Missing tool::pack needs tar"),
+      });
+      // Without pack, nothing is required of the image.
+      await expect(
+        bash(check, {}, { CACHE: "true", PACK: "false", PATH: bin }),
+      ).resolves.toMatchObject({
+        code: 0,
+      });
+    } finally {
+      await rm(bin, { recursive: true, force: true });
+    }
+  });
+
   it("packs, checks and uploads only with pack, after pnpm verify has built and verified", async () => {
     const { runs, inputs, outputs } = await action("verify");
     expect(inputs.pack.default).toBe("false");

@@ -31,6 +31,10 @@ outputs:
 runs:
   using: composite
   steps:
+    # The pack path runs in the browser test image (ADR 0025, in sdk-core),
+    # so it needs only what that image has: Node comes from setup-node, and
+    # these from the image itself. A missing one fails here, by name, before
+    # the long verify run.
     - name: Check the inputs
       shell: bash
       env:
@@ -40,6 +44,14 @@ runs:
         if [ "$PACK" = "true" ] && [ "$CACHE" != "false" ]; then
           echo "::error title=Cached release::pack needs cache \"false\", so a poisoned cache can't reach a release."
           exit 1
+        fi
+        if [ "$PACK" = "true" ]; then
+          for tool in sha256sum cut tar gzip; do
+            if ! command -v "$tool" > /dev/null; then
+              echo "::error title=Missing tool::pack needs $tool, which this image doesn't have."
+              exit 1
+            fi
+          done
         fi
 
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
