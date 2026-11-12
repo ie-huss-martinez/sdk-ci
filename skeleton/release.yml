@@ -87,14 +87,22 @@ jobs:
       options: --user 1001 --ipc=host --init
     env:
       HUSKY: "0"
+    # The SHA-256 of the publish plan uploaded with the tarballs, which the
+    # publish job checks (ADR 0041, in sdk-core).
+    outputs:
+      packs: ${{ steps.verify.outputs.packs }}
     steps:
-      - uses: ie-huss-martinez/sdk-ci/verify@0000000000000000000000000000000000000000 # vX.Y.Z
+      # Builds and verifies, then packs, checks and uploads the tarballs that
+      # the publish job publishes, so nothing it publishes is built there.
+      - id: verify
+        uses: ie-huss-martinez/sdk-ci/verify@0000000000000000000000000000000000000000 # vX.Y.Z
         with:
           cache: "false"
+          pack: "true"
 
   # Runs whenever the plan job ran, even if verify failed, so the finishing
   # steps still repair releases left unfinished by earlier runs. It publishes
-  # only what the verify job verified in this run.
+  # only the tarballs the verify job built, checked and uploaded in this run.
   publish:
     name: publish
     needs: [version, plan, verify]
@@ -110,4 +118,5 @@ jobs:
       - uses: ie-huss-martinez/sdk-ci/publish@0000000000000000000000000000000000000000 # vX.Y.Z
         with:
           verified: ${{ needs.verify.result }}
+          packs: ${{ needs.verify.outputs.packs }}
           npm-token: ${{ secrets.NPM_TOKEN }}
