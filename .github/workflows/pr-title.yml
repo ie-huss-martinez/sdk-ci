@@ -1,0 +1,59 @@
+name: PR title
+
+# The squash commit on main takes its message from the pull request title, so
+# the title must be a valid Conventional Commit (ADR 0016, in sdk-core).
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read # read the pull request title
+
+# No concurrency group, on purpose. Pushing and then editing the description
+# starts two runs for the same commit, and cancelling one leaves a cancelled
+# required check on that commit, which blocks the merge. A group with
+# cancel-in-progress: false doesn't help, because a newer queued run still
+# cancels a pending one. The job finishes in seconds, so letting every run
+# complete costs nothing.
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # The squash commit title is this title plus " (#NNN)", so 65 characters
+      # keep it within git's 72-character subject line. The title is untrusted
+      # input, so it reaches the script only through an environment variable.
+      - name: Check the title length
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          MAX_LENGTH: 65
+          # ${#TITLE} counts characters only under a UTF-8 locale, bytes otherwise.
+          LC_ALL: C.UTF-8
+        run: |
+          length=${#TITLE}
+          if [ "$length" -gt "$MAX_LENGTH" ]; then
+            echo "::error title=Pull request title too long::The title has $length characters. Keep it to $MAX_LENGTH or fewer, and put details in the description."
+            exit 1
+          fi
+
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" in "{title}" must start with a lowercase letter.
