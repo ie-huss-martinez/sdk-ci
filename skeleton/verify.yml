@@ -1,0 +1,64 @@
+name: Verify
+
+# Runs the full `pnpm verify` on every pull request and every push to main
+# (ADR 0015, in sdk-core), and checks pull requests for changesets (ADR 0021).
+# The job names are the required status checks, so keep them `verify` and
+# `changeset`.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same pull request, but let every run on main
+# finish, so each commit on main keeps its own result.
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Reads the browser test image from ci/Dockerfile (ADR 0025).
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
+    steps:
+      - id: image
+        uses: ie-huss-martinez/sdk-ci/image@0000000000000000000000000000000000000000 # vX.Y.Z
+
+  verify:
+    name: verify
+    needs: image
+    # A job whose dependency failed is skipped, and a skipped required check
+    # counts as passing. So verify still runs then, and fails on the fallback
+    # image name below, which can't be pulled.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The browser test image, with the browsers and their system libraries
+    # preinstalled. User 1001 owns the runner's workspace, and Firefox won't
+    # start as root with a home directory owned by another user.
+    container:
+      image: ${{ needs.image.outputs.ref || 'the-image-job-failed@sha256:0000000000000000000000000000000000000000000000000000000000000000' }}
+      options: --user 1001 --ipc=host --init
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/verify@0000000000000000000000000000000000000000 # vX.Y.Z
+
+      # This repository's workflows must match the skeleton of the sdk-ci
+      # version it pins (ADR 0026).
+      - uses: ie-huss-martinez/sdk-ci/check-workflows@0000000000000000000000000000000000000000 # vX.Y.Z
+
+  # The version pull request consumes changesets by design, so it's skipped.
+  changeset:
+    name: changeset
+    if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/changeset@0000000000000000000000000000000000000000 # vX.Y.Z

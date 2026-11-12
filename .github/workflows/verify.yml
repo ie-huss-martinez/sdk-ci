@@ -59,3 +59,45 @@ jobs:
             echo "::error::The image action output \"$REF\", not \"$expected\"."
             exit 1
           fi
+
+  # Runs the check-workflows action, as every repository's verify job does,
+  # on the skeleton pinned to a sample version, then on a copy that drifts
+  # from it, which it must reject.
+  check-workflows-action:
+    name: check-workflows action
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the sample workflows
+        run: |
+          mkdir -p "$RUNNER_TEMP/matching" "$RUNNER_TEMP/drifting"
+          for file in skeleton/*.yml; do
+            sed 's/@0000000000000000000000000000000000000000 # vX.Y.Z/@1111111111111111111111111111111111111111 # v1.0.0/' "$file" > "$RUNNER_TEMP/matching/$(basename "$file")"
+          done
+          cp "$RUNNER_TEMP"/matching/*.yml "$RUNNER_TEMP/drifting/"
+          sed -i 's/      contents: write # push tags/      contents: write\n      actions: write # push tags/' "$RUNNER_TEMP/drifting/release.yml"
+          echo "MATCHING=$RUNNER_TEMP/matching" >> "$GITHUB_ENV"
+          echo "DRIFTING=$RUNNER_TEMP/drifting" >> "$GITHUB_ENV"
+
+      - uses: ./check-workflows
+        with:
+          workflows: ${{ env.MATCHING }}
+
+      - id: drifting
+        uses: ./check-workflows
+        continue-on-error: true
+        with:
+          workflows: ${{ env.DRIFTING }}
+
+      - name: Check that the drifting copy was rejected
+        env:
+          OUTCOME: ${{ steps.drifting.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::check-workflows accepted workflows that drift from the skeleton."
+            exit 1
+          fi

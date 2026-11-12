@@ -1,0 +1,113 @@
+name: Release
+
+# Versions and publishes the packages with Changesets (ADR 0021, in sdk-core).
+#
+# - With changesets on main, the version job opens or updates the
+#   "chore: version packages" pull request.
+# - Once that pull request is merged, the plan job finds the versions not yet
+#   on npm, and the verify job runs pnpm verify for them in the browser test
+#   image, with read-only permissions (ADR 0023). The publish job then
+#   publishes them with trusted publishing and provenance, creates the tags
+#   and GitHub Releases, and attaches the tarballs with SHA256SUMS and
+#   attestations.
+#
+# The npm trusted publisher of each package is bound to this file's name and
+# the npm environment, so keep both.
+on:
+  push:
+    branches: [main]
+
+permissions: {} # each job declares only what it needs
+
+# Never cancel a release in progress; queue the next push behind it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Restricted to main, so the version job only runs there.
+    environment: release
+    permissions:
+      contents: write # push the version commit to the release branch
+      pull-requests: write # open and update the version pull request
+    outputs:
+      has-changesets: ${{ steps.version.outputs.has-changesets }}
+    steps:
+      - id: version
+        uses: ie-huss-martinez/sdk-ci/version@0000000000000000000000000000000000000000 # vX.Y.Z
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+  plan:
+    name: plan
+    needs: version
+    if: needs.version.outputs.has-changesets == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      pending: ${{ steps.plan.outputs.pending }}
+    steps:
+      - id: plan
+        uses: ie-huss-martinez/sdk-ci/plan@0000000000000000000000000000000000000000 # vX.Y.Z
+
+  image:
+    name: image
+    needs: plan
+    if: needs.plan.outputs.pending == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
+    steps:
+      - id: image
+        uses: ie-huss-martinez/sdk-ci/image@0000000000000000000000000000000000000000 # vX.Y.Z
+
+  verify:
+    # Not "verify", the name of verify.yml's required check.
+    name: verify release
+    needs: [plan, image]
+    # Runs even if the image job failed, and then fails on the fallback image
+    # name, which can't be pulled. publish then refuses to publish.
+    if: ${{ !cancelled() && needs.plan.outputs.pending == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: ${{ needs.image.outputs.ref || 'the-image-job-failed@sha256:0000000000000000000000000000000000000000000000000000000000000000' }}
+      options: --user 1001 --ipc=host --init
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/verify@0000000000000000000000000000000000000000 # vX.Y.Z
+        with:
+          cache: "false"
+
+  # Runs whenever the plan job ran, even if verify failed, so the finishing
+  # steps still repair releases left unfinished by earlier runs. It publishes
+  # only what the verify job verified in this run.
+  publish:
+    name: publish
+    needs: [version, plan, verify]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: write # push tags, create GitHub Releases and upload their files
+      id-token: write # npm trusted publishing and provenance, through OIDC
+      attestations: write # create the artifact attestations
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/publish@0000000000000000000000000000000000000000 # vX.Y.Z
+        with:
+          verified: ${{ needs.verify.result }}
+          npm-token: ${{ secrets.NPM_TOKEN }}

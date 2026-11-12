@@ -1,0 +1,45 @@
+name: Check the pull request title
+description: >-
+  Checks that a pull request's title, which becomes the squash commit on
+  main, is a Conventional Commit with a lowercase subject, of 65 characters
+  or fewer (ADR 0016, in sdk-core). Needs pull-requests read.
+
+runs:
+  using: composite
+  steps:
+    # The squash commit title is this title plus " (#NNN)", so 65 characters
+    # keep it within git's 72-character subject line. The title is untrusted
+    # input, so it reaches the script only through an environment variable.
+    - name: Check the title length
+      shell: bash
+      env:
+        TITLE: ${{ github.event.pull_request.title }}
+        MAX_LENGTH: 65
+        # ${#TITLE} counts characters only under a UTF-8 locale, bytes otherwise.
+        LC_ALL: C.UTF-8
+      run: |
+        length=${#TITLE}
+        if [ "$length" -gt "$MAX_LENGTH" ]; then
+          echo "::error title=Pull request title too long::The title has $length characters. Keep it to $MAX_LENGTH or fewer, and put details in the description."
+          exit 1
+        fi
+
+    - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        types: |
+          feat
+          fix
+          docs
+          refactor
+          perf
+          test
+          build
+          ci
+          chore
+          revert
+        requireScope: false
+        subjectPattern: ^(?![A-Z]).+$
+        subjectPatternError: |
+          The subject "{subject}" in "{title}" must start with a lowercase letter.
