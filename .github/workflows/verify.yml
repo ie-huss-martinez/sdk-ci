@@ -46,15 +46,15 @@ jobs:
       - id: image
         uses: ./image
         with:
-          directory: test/fixtures/ci
+          directory: image/fixture
 
-      # The action checks out only the Dockerfile's directory, so this step
-      # reads the fixture through that same sparse checkout.
+      # The action checks out only the Dockerfile's directory, in cone mode,
+      # so this step reads the fixture through that same sparse checkout.
       - name: Check the output
         env:
           REF: ${{ steps.image.outputs.ref }}
         run: |
-          expected=$(sed -n 's/^FROM //p' test/fixtures/ci/Dockerfile)
+          expected=$(sed -n 's/^FROM //p' image/fixture/Dockerfile)
           if [ "$REF" != "$expected" ]; then
             echo "::error::The image action output \"$REF\", not \"$expected\"."
             exit 1
