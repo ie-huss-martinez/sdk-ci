@@ -2,6 +2,15 @@
 
 Each release of sdk-ci, newest first. A repository adopts one by pinning its full commit SHA, with the version in a comment; Dependabot proposes each new one. See the README for what major, minor and patch mean here.
 
+## v2.0.1
+
+**A fix:** with v2.0.0, a release's verify job failed at "Plan the release" with `jq: command not found`, because it runs in the browser test image ([ADR 0025](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0025-one-browser-test-image-in-one-place.md), in sdk-core), which has no `jq`. Nothing was published: the publish job refused, as it should.
+
+- **`plan`, shared by the verify, plan and publish actions,** counts the versions to publish with Node instead of `jq`.
+- **`verify`, with `pack: "true"`,** checks up front that the image has the tools the pack path uses (`sha256sum`, `cut`, `tar` and `gzip`), and fails naming any that's missing, before running `pnpm verify`.
+- **Tests:** CI now runs the verify action's own pack steps in the release's browser test image, as user 1001, against a fixture package, once built and once without `dist/`.
+- **Adopting it:** update every sdk-ci pin to this release's commit SHA with `# v2.0.1`. The skeleton is unchanged from v2.0.0, so a repository still on v1 makes v2.0.0's `release.yml` change in the same pull request.
+
 ## v2.0.0
 
 **A fix, released as a major version:** every repository must change its `release.yml`. The publish action packed packages it never built, so `@hussmartinez/sdk-core` 0.1.3 and 0.2.0, and `@hussmartinez/ui` 0.1.0 to 0.2.0, were published without `dist/` ([ADR 0041](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0041-publish-the-verified-tarballs.md), in sdk-core). Releases now publish exactly the tarballs that the verify job built, checked and uploaded.
