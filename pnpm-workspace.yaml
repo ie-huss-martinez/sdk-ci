@@ -1,0 +1,12 @@
+# Supply-chain hardening, as in every repository of the family (ADR 0012, in
+# sdk-core).
+# Dependency install scripts are blocked unless allowlisted here.
+allowBuilds: {}
+# Fail the install when an unapproved package wants to run a build script.
+strictDepBuilds: true
+# Don't resolve versions published less than a day ago.
+minimumReleaseAge: 1440
+# Refuse a version with weaker publish provenance than an earlier one.
+trustPolicy: no-downgrade
+# Transitive dependencies must come from the registry, not git or tarball URLs.
+blockExoticSubdeps: true
