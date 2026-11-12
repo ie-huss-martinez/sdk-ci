@@ -171,19 +171,91 @@ describe("the publish action", () => {
   /** @param {(step: Record<string, any>) => boolean} test */
   const index = async (test) => (await action("publish")).runs.steps.findIndex(test);
 
-  it("checks that the release was verified before anything is packed or published", async () => {
+  it("checks the release was verified, then downloads and checks its tarballs, before publishing", async () => {
     const check = await index((step) => step.name === "Check that this release was verified");
-    const pack = await index((step) => step.name === "Pack the packages");
+    const download = await index((step) => step.name === "Download the verified tarballs");
+    const tarballs = await index((step) => step.name === "Check the verified tarballs");
     const publish = await index((step) => String(step.uses).startsWith("changesets/action@"));
     expect(check).toBeGreaterThan(-1);
-    expect(check).toBeLessThan(pack);
-    expect(pack).toBeLessThan(publish);
+    expect(check).toBeLessThan(download);
+    expect(download).toBeLessThan(tarballs);
+    expect(tarballs).toBeLessThan(publish);
     const { runs } = await action("publish");
     expect(runs.steps[check].env).toEqual({ VERIFIED: `${expression("inputs.verified")}` });
     // Every step that publishes runs only after the earlier steps succeeded.
     for (const step of runs.steps.slice(check, publish + 1)) {
       expect(step.if).toBe("steps.plan.outputs.pending == 'true'");
     }
+  });
+
+  it("never builds or packs: it publishes the verify job's tarballs", async () => {
+    const { runs } = await action("publish");
+    const text = await readFile(join(ROOT, "publish", "action.yml"), "utf8");
+    expect(text).not.toMatch(/changeset pack|pnpm build|pnpm -r build|pnpm verify/);
+    const download = runs.steps.find((step) => step.name === "Download the verified tarballs");
+    expect(download.uses).toMatch(/^actions\/download-artifact@[0-9a-f]{40}$/);
+    expect(download.with).toEqual({
+      name: "release-packs",
+      path: `${expression("runner.temp")}/release-packs`,
+    });
+    const check = runs.steps.find((step) => step.name === "Check the verified tarballs");
+    expect(check.env).toEqual({ PACKS: expression("inputs.packs") });
+    expect(check.run).toContain('node "$GITHUB_ACTION_PATH/check-tarballs.mjs" "$packs"');
+    expect(check.run).not.toContain("--publint");
+  });
+
+  describe("its check of the verified tarballs", () => {
+    /** @param {Array<[string, string]>} versions */
+    const planOf = (versions) =>
+      JSON.stringify({
+        plan: [versions.map(([name, version]) => ({ kind: "publish", name, version }))],
+      });
+    const sha256 = (/** @type {string} */ text) =>
+      execFileSync("sha256sum", { input: text, encoding: "utf8" }).split(" ")[0];
+
+    /** @param {string} downloaded @param {string} planned @param {string} packs */
+    async function check(downloaded, planned, packs) {
+      return bash(
+        await script("publish", "Check the verified tarballs"),
+        { "release-packs/publish-plan.json": downloaded, "publish-plan.json": planned },
+        { PACKS: packs, GITHUB_ACTION_PATH: join(ROOT, "publish") },
+      );
+    }
+
+    it("passes the verify job's plan for the same versions, in any order", async () => {
+      const downloaded = JSON.stringify({ plan: [] });
+      await expect(check(downloaded, planOf([]), sha256(downloaded))).resolves.toMatchObject({
+        code: 0,
+        stdout: expect.stringContaining("No tarballs to check."),
+      });
+      const both = planOf([
+        ["b", "1.0.0"],
+        ["a", "2.0.0"],
+      ]);
+      const reordered = planOf([
+        ["a", "2.0.0"],
+        ["b", "1.0.0"],
+      ]);
+      // The plan's steps have no tarballs, so the file check fails after the
+      // hash and plan checks pass: proof that they passed.
+      await expect(check(both, reordered, sha256(both))).resolves.toMatchObject({ code: 1 });
+    });
+
+    it("refuses a plan that isn't the one the verify job recorded", async () => {
+      const downloaded = planOf([["a", "1.0.0"]]);
+      for (const packs of ["", sha256(`${downloaded} `), "0".repeat(64)]) {
+        const result = await check(downloaded, downloaded, packs);
+        expect(result).toMatchObject({ code: 1 });
+        expect(result.stdout).toContain("title=Unverified tarballs");
+      }
+    });
+
+    it("refuses tarballs for other versions than this job plans", async () => {
+      const downloaded = planOf([["a", "1.0.0"]]);
+      const result = await check(downloaded, planOf([["a", "1.0.1"]]), sha256(downloaded));
+      expect(result).toMatchObject({ code: 1 });
+      expect(result.stdout).toContain("title=Different release");
+    });
   });
 
   it("refuses an unverified release in its check", async () => {
@@ -227,6 +299,69 @@ describe("the verify action", () => {
     const setup = runs.steps.find((step) => String(step.uses).startsWith("pnpm/action-setup@"));
     expect(setup.with).toEqual({ cache: `${expression("inputs.cache == 'true'")}` });
     expect(inputs.cache.default).toBe("true");
+  });
+
+  it("refuses to pack a release with a cached store", async () => {
+    const check = await script("verify", "Check the inputs");
+    await expect(bash(check, {}, { CACHE: "true", PACK: "true" })).resolves.toMatchObject({
+      code: 1,
+      stdout: expect.stringContaining("title=Cached release"),
+    });
+    for (const [cache, pack] of [
+      ["false", "true"],
+      ["true", "false"],
+      ["false", "false"],
+    ]) {
+      await expect(bash(check, {}, { CACHE: cache, PACK: pack })).resolves.toMatchObject({
+        code: 0,
+      });
+    }
+  });
+
+  it("packs, checks and uploads only with pack, after pnpm verify has built and verified", async () => {
+    const { runs, inputs, outputs } = await action("verify");
+    expect(inputs.pack.default).toBe("false");
+    const at = (/** @type {(step: Record<string, any>) => boolean} */ test) =>
+      runs.steps.findIndex(test);
+    const verify = at((step) => step.run === "pnpm verify");
+    const pack = at((step) => step.name === "Pack the packages");
+    const check = at((step) => step.name === "Check the tarballs");
+    const hash = at((step) => step.id === "packs");
+    const upload = at((step) => String(step.uses).startsWith("actions/upload-artifact@"));
+    expect([verify, pack, check, hash, upload]).toEqual(
+      [verify, pack, check, hash, upload].toSorted((a, b) => a - b),
+    );
+    expect(verify).toBeGreaterThan(-1);
+    for (const step of runs.steps.slice(pack, upload + 1)) {
+      expect(step.if).toBe("inputs.pack == 'true' && steps.plan.outputs.pending == 'true'");
+    }
+    expect(runs.steps[check].run).toContain(
+      'check-tarballs.mjs" "$RUNNER_TEMP/release-packs" --publint "$work/node_modules/.bin/publint"',
+    );
+    expect(runs.steps[check].run).toContain("npm ci --ignore-scripts");
+    expect(runs.steps[upload].uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
+    expect(runs.steps[upload].with).toMatchObject({
+      name: "release-packs",
+      path: `${expression("runner.temp")}/release-packs`,
+      "if-no-files-found": "error",
+    });
+    expect(outputs.packs.value).toBe(expression("steps.packs.outputs.sha256"));
+  });
+
+  it("locks the publint it runs", async () => {
+    const lock = JSON.parse(
+      await readFile(join(ROOT, "verify", "publint", "package-lock.json"), "utf8"),
+    );
+    const manifest = JSON.parse(
+      await readFile(join(ROOT, "verify", "publint", "package.json"), "utf8"),
+    );
+    expect(manifest.dependencies.publint).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(lock.packages["node_modules/publint"].version).toBe(manifest.dependencies.publint);
+    for (const [path, entry] of Object.entries(lock.packages)) {
+      if (path !== "") {
+        expect(entry.integrity, path).toMatch(/^sha512-/);
+      }
+    }
   });
 });
 

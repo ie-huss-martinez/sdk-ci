@@ -22,12 +22,20 @@ Each action checks out the repository itself and runs in a job that the calling 
 |---|---|---|---|
 | [`pr-title`](pr-title/action.yml) | `pr-title` | Checks that the pull request title is a Conventional Commit with a lowercase subject, of 65 characters or fewer | none |
 | [`image`](image/action.yml) | `image` | Reads the browser test image from `ci/Dockerfile`, requiring one `FROM` line with Microsoft's Playwright image pinned by tag and digest, and outputs `ref` | `directory` (default `ci`) |
-| [`verify`](verify/action.yml) | `verify`, `verify release` | Installs Node from `.node-version`, pnpm and the locked dependencies, then runs `pnpm verify` | `cache` (default `true`; `false` in releases) |
+| [`verify`](verify/action.yml) | `verify`, `verify release` | Installs Node from `.node-version`, pnpm and the locked dependencies, then runs `pnpm verify`. In a release, with `pack`, it also packs the versions to publish from that build, checks the tarballs, uploads them as `release-packs`, and outputs `packs`, the SHA-256 of their plan | `cache` (default `true`; `false` in releases), `pack` (default `false`; `true` in releases) |
 | [`check-workflows`](check-workflows/action.yml) | `verify`, after `verify` | Checks that the repository's workflows match the skeleton of the sdk-ci version they pin, all pinned to one SHA | `workflows` (default `.github/workflows`) |
 | [`changeset`](changeset/action.yml) | `changeset` | Fails a pull request that changes a published package without a changeset. A `package.json` change counts only if a field outside `devDependencies`, `scripts`, `packageManager` and `devEngines` changed ([ADR 0027](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0027-dev-only-package-json-changes-need-no-changeset.md)) | none |
 | [`version`](version/action.yml) | `version` | Opens or updates the `chore: version packages` pull request with Changesets, with a token from the release App, and outputs `has-changesets` | `client-id`, `private-key` |
 | [`plan`](plan/action.yml) | `plan` | Lists the versions not yet on npm, and outputs `pending` | none |
-| [`publish`](publish/action.yml) | `publish` | Publishes those versions with trusted publishing and provenance, only if `verified` is `success`; tags them, creates their GitHub Releases, and attaches each tarball with `SHA256SUMS` and an attestation, also repairing releases an earlier run left unfinished | `verified`, `npm-token` (bootstrap only), `npm-publish-command` (default `publish`) |
+| [`publish`](publish/action.yml) | `publish` | Publishes those versions with trusted publishing and provenance, only if `verified` is `success`, from the tarballs the verify job uploaded, after checking them against `packs`; it never builds or packs; tags them, creates their GitHub Releases, and attaches each tarball with `SHA256SUMS` and an attestation, also repairing releases an earlier run left unfinished | `verified`, `packs`, `npm-token` (bootstrap only), `npm-publish-command` (default `publish`) |
+
+**The tarballs** ([ADR 0041](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0041-publish-the-verified-tarballs.md)): the verify job builds, packs and checks them, and the publish job publishes exactly those files, so no package build code runs where the OIDC token is. Before anything is published:
+
+- every file that a package's `main`, `module`, `types`, `typings`, `bin` and `exports` point to must be in its tarball. [`publish/check-tarballs.mjs`](publish/check-tarballs.mjs) checks this in both jobs, and fails naming the missing paths;
+- `publint --strict` must pass on each tarball, in the verify job only, from [its own lockfile](verify/publint);
+- the downloaded plan must have the SHA-256 the verify job recorded, and list the same versions as the publish job's own plan. `publish-packages.mjs` then checks each tarball against the plan's integrity.
+
+After publishing, `finish-releases.mjs` reads each version's `dist.integrity` back from the registry and fails if it doesn't match the tarball.
 
 `publish` runs in the caller's own `publish` job, in its `npm` environment, so each package's npm trusted publisher keeps matching the caller's `release.yml` ([ADR 0026](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0026-share-ci-steps-from-sdk-ci.md)).
 

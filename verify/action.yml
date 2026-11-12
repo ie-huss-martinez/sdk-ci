@@ -2,7 +2,10 @@ name: Verify
 description: >-
   Checks out the repository, installs Node from .node-version, pnpm from
   packageManager and the locked dependencies, and runs pnpm verify. Run it in
-  the browser test image's container (ADR 0025, in sdk-core).
+  the browser test image's container (ADR 0025, in sdk-core). In a release's
+  verify job, with pack, it also packs the versions to publish from the build
+  it verified, checks the tarballs, and uploads them for the publish job,
+  which publishes exactly those files (ADR 0041, in sdk-core).
 
 inputs:
   cache:
@@ -10,10 +13,35 @@ inputs:
       Whether to cache pnpm's store. Pull requests do; releases don't, so a
       poisoned cache can't reach a release.
     default: "true"
+  pack:
+    description: >-
+      "true" in a release's verify job: pack the versions to publish, check
+      them, and upload them as the release-packs artifact. Needs cache
+      "false".
+    default: "false"
+
+outputs:
+  packs:
+    description: >-
+      With pack, the SHA-256 of the uploaded publish-plan.json, which records
+      each tarball's integrity. The publish action checks the files it
+      downloads against it.
+    value: ${{ steps.packs.outputs.sha256 }}
 
 runs:
   using: composite
   steps:
+    - name: Check the inputs
+      shell: bash
+      env:
+        CACHE: ${{ inputs.cache }}
+        PACK: ${{ inputs.pack }}
+      run: |
+        if [ "$PACK" = "true" ] && [ "$CACHE" != "false" ]; then
+          echo "::error title=Cached release::pack needs cache \"false\", so a poisoned cache can't reach a release."
+          exit 1
+        fi
+
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
@@ -33,3 +61,49 @@ runs:
 
     - shell: bash
       run: pnpm verify
+
+    # The rest runs only in a release's verify job. pnpm verify has just built
+    # the packages, so the tarballs hold exactly what it verified.
+    - id: plan
+      name: Plan the release
+      if: inputs.pack == 'true'
+      shell: bash
+      run: "$GITHUB_ACTION_PATH/../plan/plan.sh"
+
+    # changeset pack rewrites catalog: and workspace: ranges into real
+    # versions, and writes the tarballs with a copy of the plan that records
+    # each one's integrity.
+    - name: Pack the packages
+      if: inputs.pack == 'true' && steps.plan.outputs.pending == 'true'
+      shell: bash
+      run: pnpm changeset pack --from-publish-plan "$RUNNER_TEMP/publish-plan.json" --out-dir "$RUNNER_TEMP/release-packs"
+
+    # Every file that package.json points to must be in the tarball, and
+    # publint --strict must pass on the tarball itself. publint comes from
+    # this action's own lockfile, installed without scripts, so a repository
+    # needn't depend on it.
+    - name: Check the tarballs
+      if: inputs.pack == 'true' && steps.plan.outputs.pending == 'true'
+      shell: bash
+      run: |
+        work="$RUNNER_TEMP/sdk-ci-publint"
+        rm -rf "$work"
+        mkdir -p "$work"
+        cp "$GITHUB_ACTION_PATH/publint/package.json" "$GITHUB_ACTION_PATH/publint/package-lock.json" "$work/"
+        (cd "$work" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error)
+        node "$GITHUB_ACTION_PATH/../publish/check-tarballs.mjs" "$RUNNER_TEMP/release-packs" --publint "$work/node_modules/.bin/publint"
+
+    - id: packs
+      name: Record the plan's hash
+      if: inputs.pack == 'true' && steps.plan.outputs.pending == 'true'
+      shell: bash
+      run: echo "sha256=$(sha256sum "$RUNNER_TEMP/release-packs/publish-plan.json" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+    - name: Upload the tarballs
+      if: inputs.pack == 'true' && steps.plan.outputs.pending == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: release-packs
+        path: ${{ runner.temp }}/release-packs
+        if-no-files-found: error
+        retention-days: 1

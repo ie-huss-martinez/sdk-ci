@@ -1,0 +1,9 @@
+{
+  "name": "sdk-ci-publint",
+  "private": true,
+  "description": "The locked copy of publint that the verify action runs on release tarballs.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "publint": "0.3.25"
+  }
+}
