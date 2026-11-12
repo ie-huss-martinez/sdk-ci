@@ -101,3 +101,25 @@ jobs:
             echo "::error::check-workflows accepted workflows that drift from the skeleton."
             exit 1
           fi
+
+  # The publish action's publishing step runs a script next to the action
+  # through github.action_path inside a nested changesets/action's with:. This
+  # job runs a fixture of that shape, with the same changesets/action, and
+  # checks that the script ran, from this repository, with its argument.
+  action-path:
+    name: action_path in a nested with
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - uses: ./test/fixtures/action-path
+
+      - name: Check that the script ran
+        run: node test/fixtures/action-path/check.mjs "$RUNNER_TEMP/action-path-ran.json"
