@@ -229,3 +229,22 @@ describe("the verify action", () => {
     expect(inputs.cache.default).toBe("true");
   });
 });
+
+describe("the action_path fixture", () => {
+  // CI runs the fixture to prove that github.action_path works inside a
+  // nested action's with:, as the publish action relies on. It only proves
+  // that while it has the same shape.
+  it("has the same shape as the publish action's publishing step", async () => {
+    const nested = (definition) =>
+      definition.runs.steps.find((step) => String(step.uses).startsWith("changesets/action@"));
+    const publish = nested(await action("publish"));
+    const fixture = nested(
+      parse(await readFile(join(ROOT, "test", "fixtures", "action-path", "action.yml"), "utf8")),
+    );
+    const prefix = `node ${expression("github.action_path")}/`;
+
+    expect(fixture.uses).toBe(publish.uses);
+    expect(publish.with["publish-script"].startsWith(prefix)).toBe(true);
+    expect(fixture.with["publish-script"].startsWith(prefix)).toBe(true);
+  });
+});
