@@ -1,0 +1,22 @@
+name: PR title
+
+# The squash commit on main takes its message from the pull request title, so
+# the title must be a valid Conventional Commit (ADR 0016, in sdk-core).
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read # read the pull request title
+
+# No concurrency group, on purpose. Pushing and then editing the description
+# starts two runs for the same commit, and cancelling one leaves a cancelled
+# required check on that commit, which blocks the merge.
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/pr-title@0000000000000000000000000000000000000000 # vX.Y.Z

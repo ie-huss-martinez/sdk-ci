@@ -1,0 +1,10 @@
+{
+  "name": "sdk-ci-check-workflows",
+  "private": true,
+  "description": "The check-workflows action's own dependencies, installed from package-lock.json when it runs.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "yaml": "2.9.1"
+  }
+}

@@ -1,0 +1,31 @@
+name: Check the workflows
+description: >-
+  Checks that the repository's workflows match the canonical skeleton of the
+  sdk-ci version they pin, and that every sdk-ci reference is pinned to the
+  same full commit SHA (ADR 0026, in sdk-core). Run it after the verify
+  action, which checks out the repository and sets up Node. Needs only
+  contents read.
+
+inputs:
+  workflows:
+    description: The repository's workflow directory.
+    default: .github/workflows
+
+runs:
+  using: composite
+  steps:
+    # The check parses YAML with its own locked copy of the yaml package,
+    # installed into a temporary directory from this action's lockfile, with
+    # each tarball checked against its recorded integrity and no install
+    # scripts.
+    - name: Check the workflows
+      shell: bash
+      env:
+        WORKFLOWS: ${{ inputs.workflows }}
+      run: |
+        work="$RUNNER_TEMP/sdk-ci-check-workflows"
+        rm -rf "$work"
+        mkdir -p "$work"
+        cp "$GITHUB_ACTION_PATH/package.json" "$GITHUB_ACTION_PATH/package-lock.json" "$GITHUB_ACTION_PATH/check-workflows.mjs" "$work/"
+        (cd "$work" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error)
+        node "$work/check-workflows.mjs" "$GITHUB_ACTION_PATH/../skeleton" "$WORKFLOWS"

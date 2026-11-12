@@ -21,9 +21,10 @@ updates:
         patterns: ["*"]
         group-by: dependency-name
 
-  # The repository's development dependencies.
+  # The repository's development dependencies, and check-workflows' own
+  # locked yaml, which it installs when it runs.
   - package-ecosystem: npm
-    directory: /
+    directories: ["/", "/check-workflows"]
     schedule:
       interval: weekly
     cooldown:
