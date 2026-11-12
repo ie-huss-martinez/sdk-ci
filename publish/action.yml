@@ -1,0 +1,143 @@
+name: Publish the release
+description: >-
+  Publishes the package versions not yet on npm with trusted publishing and
+  provenance, tags them, creates their GitHub Releases, and attaches each
+  tarball with SHA256SUMS and an attestation. It also finishes releases that
+  an earlier run left without their files. It publishes nothing unless the
+  release's verify job succeeded in this run (ADR 0021 and ADR 0023, in
+  sdk-core). Run it in the caller's own publish job, in the npm environment,
+  with contents write, id-token write and attestations write, so the npm
+  trusted publisher still matches the caller's release.yml.
+
+inputs:
+  verified:
+    description: The verify release job's result, needs.verify.result.
+    required: true
+  npm-token:
+    description: >-
+      A bootstrap token, secrets.NPM_TOKEN, only for a package's first
+      publish, before its trusted publisher exists. Empty otherwise.
+    default: ""
+  npm-publish-command:
+    description: >-
+      "publish" to publish directly, or "stage publish" to wait for a
+      maintainer's approval on npm.
+    default: publish
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # No registry-url: trusted publishing needs no token or .npmrc.
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+
+    # No caches in a job that publishes: everything is installed fresh, so a
+    # poisoned cache can't reach a release.
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+    - shell: bash
+      env:
+        HUSKY: "0"
+      run: pnpm install --frozen-lockfile
+
+    # Every release file (the plan, the packed tarballs and the release
+    # assets) goes to $RUNNER_TEMP, outside the checkout.
+
+    # The plan again, here, because the packing and publishing steps write
+    # their results into it.
+    - id: plan
+      name: Plan the release
+      shell: bash
+      run: "$GITHUB_ACTION_PATH/../plan/plan.sh"
+
+    - name: Check the npm version
+      if: steps.plan.outputs.pending == 'true'
+      shell: bash
+      run: |
+        required=11.5.1
+        current=$(npm --version)
+        if [ "$(printf '%s\n' "$required" "$current" | sort -V | head -n 1)" != "$required" ]; then
+          echo "::error::npm $current is too old for trusted publishing; $required or newer is needed."
+          exit 1
+        fi
+
+    # Never publish what the verify job didn't verify: it failed, or the
+    # plan job found nothing to publish and it didn't run. The finishing
+    # steps below still run.
+    - name: Check that this release was verified
+      if: steps.plan.outputs.pending == 'true'
+      shell: bash
+      env:
+        VERIFIED: ${{ inputs.verified }}
+      run: |
+        if [ "$VERIFIED" != "success" ]; then
+          echo "::error title=Release not verified::The verify job's result is \"$VERIFIED\", so nothing is published. Fix the cause, then re-run the workflow."
+          exit 1
+        fi
+
+    # changeset pack rewrites catalog: and workspace: ranges into real
+    # versions, and records each tarball's integrity in the plan.
+    - name: Pack the packages
+      if: steps.plan.outputs.pending == 'true'
+      shell: bash
+      run: pnpm changeset pack --from-publish-plan "$RUNNER_TEMP/publish-plan.json" --out-dir "$RUNNER_TEMP/release-packs"
+
+    # Bootstrap only (ADR 0021): npm can't configure a trusted publisher for
+    # a package that doesn't exist yet, so its first release uses a
+    # short-lived token. Without one, this step does nothing and publishing
+    # is pure trusted publishing. Provenance still comes from the OIDC token.
+    - name: Use the bootstrap npm token, if there is one
+      if: steps.plan.outputs.pending == 'true'
+      shell: bash
+      env:
+        NPM_TOKEN: ${{ inputs.npm-token }}
+      run: |
+        if [ -n "$NPM_TOKEN" ]; then
+          npm config set "//registry.npmjs.org/:_authToken" "$NPM_TOKEN" --location user
+          echo "::warning title=Bootstrap npm token in use::Publishing with NPM_TOKEN. After this release, configure the trusted publishers, delete the secret and revoke the token."
+        fi
+
+    # With no changesets pending, the action runs the publish script, which
+    # reports each published version; the action then pushes its tag and
+    # creates its GitHub Release. If one package fails, this step fails, but
+    # the steps below still finish the others.
+    - id: changesets
+      if: steps.plan.outputs.pending == 'true'
+      uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+      env:
+        PUBLISHED_RECORD: ${{ runner.temp }}/published.ndjson
+        NPM_PUBLISH_COMMAND: ${{ inputs.npm-publish-command }}
+      with:
+        publish-script: node ${{ github.action_path }}/publish-packages.mjs ${{ runner.temp }}/release-packs
+        create-github-releases: true
+
+    # Finishes every version that's on npm but whose GitHub Release lacks its
+    # files: the ones this run published, even if another package failed,
+    # and any left unfinished by an earlier run. Complete releases are left
+    # alone, so nothing is attested twice.
+    - id: finish
+      name: Prepare the release files
+      if: ${{ !cancelled() && steps.plan.outcome == 'success' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PUBLISHED_RECORD: ${{ runner.temp }}/published.ndjson
+        PUBLISH_PLAN: ${{ runner.temp }}/publish-plan.json
+      run: node "$GITHUB_ACTION_PATH/finish-releases.mjs" prepare "$RUNNER_TEMP/release-assets"
+
+    - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      if: ${{ !cancelled() && steps.finish.outputs.count > 0 }}
+      with:
+        subject-path: ${{ runner.temp }}/release-assets/*/*.tgz
+
+    - name: Attach the files to each GitHub Release
+      if: ${{ !cancelled() && steps.finish.outputs.count > 0 }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: node "$GITHUB_ACTION_PATH/finish-releases.mjs" attach "$RUNNER_TEMP/release-assets"

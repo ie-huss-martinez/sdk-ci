@@ -4,10 +4,10 @@ version: 2
 # caught and pulled before it is proposed.
 updates:
   # Keeps the commit SHAs that actions are pinned to current (ADR 0015, in
-  # sdk-core). `/` covers .github/workflows; the composite actions'
-  # directories are added here with the actions themselves.
+  # sdk-core): in .github/workflows, covered by `/`, and in each composite
+  # action's action.yml, covered by `/*`.
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/*"]
     schedule:
       interval: weekly
     cooldown:
@@ -15,8 +15,11 @@ updates:
     commit-message:
       prefix: ci
     groups:
+      # One pull request per action, across every directory that uses it, so
+      # all the composite actions move to the same version together.
       github-actions:
         patterns: ["*"]
+        group-by: dependency-name
 
   # The repository's development dependencies.
   - package-ecosystem: npm
