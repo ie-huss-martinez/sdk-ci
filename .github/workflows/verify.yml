@@ -38,6 +38,8 @@ jobs:
     name: image action
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,6 +103,40 @@ jobs:
             echo "::error::check-workflows accepted workflows that drift from the skeleton."
             exit 1
           fi
+
+  # The verify action's pack path runs in the browser test image in a
+  # release's verify job, as user 1001, with only the tools that image has.
+  # This job runs the action's own step scripts there against a fixture
+  # package, built and then without dist/, so a step that needs a missing
+  # tool fails here instead of in a release (ADR 0041, in sdk-core).
+  pack-path:
+    name: pack path in the browser test image
+    needs: image-action
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ${{ needs.image-action.outputs.ref }}
+      options: --user 1001 --init
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Install this repository's and the fixture's dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir test/fixtures/pack-workspace install --frozen-lockfile
+
+      - name: Run the pack path
+        run: node test/run-pack-path.mjs
 
   # The publish action's publishing step runs a script next to the action
   # through github.action_path inside a nested changesets/action's with:. This

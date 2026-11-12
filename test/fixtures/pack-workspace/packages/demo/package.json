@@ -1,0 +1,20 @@
+{
+  "name": "@hussmartinez/sdk-ci-pack-fixture",
+  "version": "0.0.0-fixture",
+  "description": "Never published: the publish plan sees a version that isn't on npm.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
