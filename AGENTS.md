@@ -32,3 +32,10 @@ These follow from the standards and ADRs, and apply to almost every change here.
 - **Pinned and offline at run time:** every action an action uses is pinned to a full commit SHA. Nothing is downloaded at run time except through those pins and the repository's own locked dependencies.
 - **Untrusted input:** inputs and anything read from the event, such as branch names and pull request titles, reach shell commands only through environment variables, never through `${{ }}` inside `run:`.
 - **Tested:** every script ships with tests that run its real command line against fakes, as `sdk-core`'s release-script tests do.
+
+## Verifying changes
+
+- **Hooks:** they run automatically: linting and a secret scan on commit, commit message checks, and `pnpm verify:fast` on push. Never use `--no-verify`. If a hook is wrong or too slow, fix it in its own pull request.
+- **Before marking a pull request ready,** run the full `pnpm verify` locally and report its results in the description.
+- **CI:** it runs `pnpm verify` and checks the pull request title. Both must pass before merging. CI is the final gate, not a substitute for local verification.
+- **Never weaken a check to make it pass.** That includes lint rules, the workflow rules test and the supply-chain settings. Fix the cause, or propose the change in its own pull request with an ADR if the rule itself is wrong.

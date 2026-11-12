@@ -14,6 +14,18 @@ The scripts each action runs live inside it, so a repository always runs exactly
 
 > Status: no release yet. The actions arrive in the next pull requests, and `v1.0.0` follows them.
 
+## Development
+
+You need Node 24 (see [`.node-version`](.node-version)) and pnpm. The exact pnpm version is pinned in `package.json`, and pnpm switches to it automatically.
+
+```sh
+pnpm install       # also installs the git hooks
+pnpm verify        # everything CI runs: Biome, then the tests
+pnpm verify:fast   # the tests, which the pre-push hook runs
+```
+
+The tests include a check of the rules in [`AGENTS.md`](AGENTS.md) for workflows and actions: every action pinned to a full commit SHA with its version in a comment, and no `${{ }}` expression inside a shell script.
+
 ## Versions
 
 Releases are plain `vX.Y.Z` tags with a GitHub Release. Nothing here is published to npm.
