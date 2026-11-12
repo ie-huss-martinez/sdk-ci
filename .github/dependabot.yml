@@ -1,0 +1,19 @@
+version: 2
+
+# Updates wait 7 days after a release, so a compromised version is usually
+# caught and pulled before it is proposed.
+updates:
+  # Keeps the commit SHAs that actions are pinned to current (ADR 0015, in
+  # sdk-core). `/` covers .github/workflows; the composite actions'
+  # directories are added here with the actions themselves.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]
