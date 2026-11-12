@@ -2,6 +2,38 @@
 
 Each release of sdk-ci, newest first. A repository adopts one by pinning its full commit SHA, with the version in a comment; Dependabot proposes each new one. See the README for what major, minor and patch mean here.
 
+## v2.0.0
+
+**A fix, released as a major version:** every repository must change its `release.yml`. The publish action packed packages it never built, so `@hussmartinez/sdk-core` 0.1.3 and 0.2.0, and `@hussmartinez/ui` 0.1.0 to 0.2.0, were published without `dist/` ([ADR 0041](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0041-publish-the-verified-tarballs.md), in sdk-core). Releases now publish exactly the tarballs that the verify job built, checked and uploaded.
+
+- **`verify`, with the new `pack: "true"`:** after `pnpm verify`, it packs the versions to publish from that build and checks the tarballs. It uploads them as the `release-packs` artifact, and outputs `packs`, the SHA-256 of their publish plan. `pack` needs `cache: "false"`.
+- **`publish`, with the new required `packs`:** it no longer builds or packs. It downloads `release-packs`, requires the plan's SHA-256 to equal `packs` and its versions to equal its own plan's, checks the files again, and publishes exactly those tarballs.
+- **The guards:**
+  - every file a package's `main`, `module`, `types`, `typings`, `bin` and `exports` point to must be in its tarball, or the release fails naming each missing path. This runs in both jobs;
+  - `publint --strict` must pass on each tarball, in the verify job only, from the action's own lockfile, so repositories needn't depend on publint.
+- **Adopting it:** update every sdk-ci pin to this release's commit SHA with `# v2.0.0`, and change `release.yml`'s verify and publish jobs as the skeleton does. `check-workflows` fails until both are done:
+
+  ```yaml
+  verify:
+    # …
+    outputs:
+      packs: ${{ steps.verify.outputs.packs }}
+    steps:
+      - id: verify
+        uses: ie-huss-martinez/sdk-ci/verify@<sha> # v2.0.0
+        with:
+          cache: "false"
+          pack: "true"
+  publish:
+    # …
+    steps:
+      - uses: ie-huss-martinez/sdk-ci/publish@<sha> # v2.0.0
+        with:
+          verified: ${{ needs.verify.result }}
+          packs: ${{ needs.verify.outputs.packs }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
+  ```
+
 ## v1.1.0
 
 The `changeset` check no longer asks for a changeset when only dev-only fields of a published package's `package.json` changed: `devDependencies`, `scripts`, `packageManager` and `devEngines` ([ADR 0027](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0027-dev-only-package-json-changes-need-no-changeset.md), in sdk-core). Dependabot's development updates now pass without an empty changeset.
