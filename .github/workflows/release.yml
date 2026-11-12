@@ -1,0 +1,38 @@
+name: Release
+
+# Releases sdk-ci when a release pull request is merged: if package.json's
+# version has no tag yet, it tags the merged commit vX.Y.Z and creates its
+# GitHub Release, with that version's CHANGELOG.md section as the notes. Every
+# other push does nothing. See README.md, "Releasing".
+on:
+  push:
+    branches: [main]
+
+permissions: {} # the job declares only what it needs
+
+# Never cancel a release in progress; queue the next push behind it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the tag and the GitHub Release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # Only Node is needed: the script uses the gh CLI and no dependencies.
+      - name: Release the version, if it's new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs

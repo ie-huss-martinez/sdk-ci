@@ -12,7 +12,7 @@ Every repository in the family keeps its own `verify.yml` and `release.yml`, wit
 
 The scripts each action runs live inside it, so a repository always runs exactly the version it pins, and a fix made here reaches every repository through its own Dependabot pull request. The reasoning is in [ADR 0026](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0026-share-ci-steps-from-sdk-ci.md), in `sdk-core`, which also holds the family's [standards](https://github.com/ie-huss-martinez/sdk-core/blob/main/STANDARDS.md).
 
-> Status: no release yet. `v1.0.0` follows the release process.
+> Status: no release yet; `v1.0.0` is the next pull request, cut with the process below. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Actions
 
@@ -39,6 +39,14 @@ Each action checks out the repository itself and runs in a job that the calling 
 - **The repository's own additions:** jobs and workflows of its own, and extra environment variables on a job.
 
 `check-workflows`, in each repository's `verify` job, enforces this against the skeleton of the version the repository pins. So an sdk-ci release that changes the skeleton says so in its notes, and the Dependabot pull request that adopts it also needs the matching workflow change, or it fails.
+
+## Releasing
+
+Releases are cut by merging a release pull request, reviewed like any other:
+
+1. **Open `chore: release vX.Y.Z`,** which sets `version` in `package.json` and adds a `## vX.Y.Z` section to [`CHANGELOG.md`](CHANGELOG.md): what changed for the repositories that use sdk-ci and, for a major version, what they have to change. `pnpm verify` fails if the section is missing or empty.
+2. **Merge it.** The [release workflow](.github/workflows/release.yml) sees a version without a tag, tags the merged commit `vX.Y.Z`, and creates its GitHub Release with that section as the notes. It refuses a version lower than the latest release. Every other push to `main` does nothing.
+3. **Repositories adopt it** through Dependabot's pull request, which updates their pinned SHA and `# vX.Y.Z` comment.
 
 ## Development
 
