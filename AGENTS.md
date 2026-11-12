@@ -18,7 +18,7 @@ It holds the family's shared CI and release steps as composite actions ([ADR 002
 - **Pull request descriptions:** cover what changed, why, and how it was tested. They can be as detailed as useful, because they don't go into git history.
 - **Squash commits:** the merger writes the commit message on `main`. Its title is the pull request title plus `(#N)`, and its body is 2–6 lines of plain prose.
 - **Commits:** follow Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`). The pull request title becomes the squash commit, so write it as a Conventional Commit too, of 65 characters or fewer.
-- **Versions:** releases are plain `vX.Y.Z` tags with a GitHub Release, and nothing is published to npm, so there are no changesets. Say in each pull request whether it's a major, minor or patch change for the repositories that use it (see the README).
+- **Versions:** releases are plain `vX.Y.Z` tags with a GitHub Release, and nothing is published to npm, so there are no changesets. Say in each pull request whether it's a major, minor or patch change for the repositories that use it (see the README). A release is its own pull request, `chore: release vX.Y.Z`, which sets `package.json`'s `version` and adds its `CHANGELOG.md` section; merging it tags the release (README, "Releasing").
 - **Signing:** commits are signed; don't disable signing.
 - **No attribution:** don't add AI or tool attribution to commits or pull requests.
 - **ADRs:** add one for any significant decision, meaning anything affecting the actions' interface, every repository's release, or security, or that is hard to reverse.

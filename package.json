@@ -1,5 +1,6 @@
 {
   "name": "sdk-ci",
+  "version": "0.0.0",
   "private": true,
   "description": "Shared CI and release steps for the @hussmartinez SDK family, as GitHub composite actions.",
   "license": "Apache-2.0",
@@ -11,8 +12,9 @@
   "scripts": {
     "prepare": "husky",
     "lint": "biome check .",
+    "release:check": "node scripts/release.mjs --check",
     "test": "vitest run",
-    "verify": "pnpm lint && pnpm test",
+    "verify": "pnpm lint && pnpm release:check && pnpm test",
     "verify:fast": "pnpm test"
   },
   "devDependencies": {
