@@ -12,7 +12,7 @@ Every repository in the family keeps its own `verify.yml` and `release.yml`, wit
 
 The scripts each action runs live inside it, so a repository always runs exactly the version it pins, and a fix made here reaches every repository through its own Dependabot pull request. The reasoning is in [ADR 0026](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0026-share-ci-steps-from-sdk-ci.md), in `sdk-core`, which also holds the family's [standards](https://github.com/ie-huss-martinez/sdk-core/blob/main/STANDARDS.md).
 
-> Status: `v1.0.0`. See [`CHANGELOG.md`](CHANGELOG.md) for each release.
+> Status: `v1.1.0`. See [`CHANGELOG.md`](CHANGELOG.md) for each release.
 
 ## Actions
 

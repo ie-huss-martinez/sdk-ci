@@ -2,6 +2,15 @@
 
 Each release of sdk-ci, newest first. A repository adopts one by pinning its full commit SHA, with the version in a comment; Dependabot proposes each new one. See the README for what major, minor and patch mean here.
 
+## v1.1.0
+
+The `changeset` check no longer asks for a changeset when only dev-only fields of a published package's `package.json` changed: `devDependencies`, `scripts`, `packageManager` and `devEngines` ([ADR 0027](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0027-dev-only-package-json-changes-need-no-changeset.md), in sdk-core). Dependabot's development updates now pass without an empty changeset.
+
+- **What still counts:** any other field, including `dependencies`, `engines`, `exports`, `version` and `private`, and any field the list doesn't name, as well as a `package.json` that's new or missing at the merge base. A toolchain update that changes what the build ships still deserves a changeset, which the reviewer asks for.
+- **How:** before `changeset status`, the action restores, in its own job's working tree only, each `package.json` whose changes are all dev-only, and logs each one. Changesets decides everything else with the repository's own configuration.
+- **Tests:** a CI job now runs a fixture with the same shape as `publish`'s publishing step, and shows that `${{ github.action_path }}` works inside a nested action's `with:`.
+- **Adopting it:** a minor update with no workflow changes, so the skeleton is unchanged. Update every sdk-ci pin to this release's commit SHA with `# v1.1.0`, as Dependabot proposes.
+
 ## v1.0.0
 
 The first release: the family's CI and release steps as composite actions, and the canonical workflow skeleton every repository follows ([ADR 0026](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0026-share-ci-steps-from-sdk-ci.md), in sdk-core). The steps and conditions are sdk-core's, as of its ADRs 0021, 0023 and 0025.
