@@ -1,0 +1,70 @@
+name: Version packages
+description: >-
+  Opens or updates the "chore: version packages" pull request with
+  Changesets while changesets are pending, using a token from the
+  organisation's release App (ADR 0021 and ADR 0024, in sdk-core). Run it in
+  a job with contents and pull-requests write, in the release environment.
+
+inputs:
+  client-id:
+    description: The release App's client ID, vars.RELEASE_APP_CLIENT_ID.
+    required: true
+  private-key:
+    description: The release App's private key, secrets.RELEASE_APP_PRIVATE_KEY.
+    required: true
+
+outputs:
+  has-changesets:
+    description: Whether changesets are pending, so nothing is published yet.
+    value: ${{ steps.changesets.outputs.has-changesets }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+
+    # No caches: everything is installed fresh, so a poisoned cache can't
+    # reach a release.
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+    - shell: bash
+      env:
+        HUSKY: "0"
+      run: pnpm install --frozen-lockfile
+
+    # A pull request opened with GITHUB_TOKEN doesn't trigger workflows, so
+    # it could never pass the required checks; the App's token does.
+    - name: Check the release App configuration
+      shell: bash
+      env:
+        CLIENT_ID: ${{ inputs.client-id }}
+        HAS_PRIVATE_KEY: ${{ inputs.private-key != '' }}
+      run: |
+        if [ -z "$CLIENT_ID" ] || [ "$HAS_PRIVATE_KEY" != "true" ]; then
+          echo "::error title=Release App not configured::Set the RELEASE_APP_CLIENT_ID variable and the RELEASE_APP_PRIVATE_KEY secret at organisation level, with access for this repository, and pass them to this action. See https://github.com/ie-huss-martinez/sdk-core/blob/main/CONTRIBUTING.md#setting-up-releases."
+          exit 1
+        fi
+
+    - id: app-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        # Scope the token to what this job needs, whatever the App can do.
+        permission-contents: write
+        permission-pull-requests: write
+
+    # Without publish-script, the action only versions: it opens or updates
+    # the version pull request when there are changesets.
+    - id: changesets
+      uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        pr-title: "chore: version packages"
+        commit-message: "chore: version packages"

@@ -24,19 +24,38 @@ jobs:
     env:
       HUSKY: "0"
     steps:
+      # The repository's own verify action, which every SDK runs, so each pull
+      # request here also exercises it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: ./verify
+
+  # Runs the image action on a fixture and checks its output, so a broken
+  # image action fails here before any repository adopts it.
+  image-action:
+    name: image action
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version-file: .node-version
+          persist-credentials: false
 
-      # Installs the pnpm version in `packageManager` and caches its store.
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - id: image
+        uses: ./image
         with:
-          cache: true
+          directory: test/fixtures/ci
 
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm verify
+      # The action checks out only the Dockerfile's directory, so this step
+      # reads the fixture through that same sparse checkout.
+      - name: Check the output
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          expected=$(sed -n 's/^FROM //p' test/fixtures/ci/Dockerfile)
+          if [ "$REF" != "$expected" ]; then
+            echo "::error::The image action output \"$REF\", not \"$expected\"."
+            exit 1
+          fi
