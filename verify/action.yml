@@ -5,7 +5,8 @@ description: >-
   the browser test image's container (ADR 0025, in sdk-core). In a release's
   verify job, with pack, it also packs the versions to publish from the build
   it verified, checks the tarballs, and uploads them for the publish job,
-  which publishes exactly those files (ADR 0041, in sdk-core).
+  which publishes exactly those files (ADR 0041, in sdk-core). When a step
+  fails, it uploads the test results, so their diffs can be reviewed.
 
 inputs:
   cache:
@@ -19,6 +20,17 @@ inputs:
       them, and upload them as the release-packs artifact. Needs cache
       "false".
     default: "false"
+  results:
+    description: >-
+      The test results to upload as the test-results artifact when a step
+      fails, one glob per line, in actions/upload-artifact's syntax. The
+      default covers Playwright's results, such as the visual tests'
+      expected, actual and diff images in e2e/test-results/visual/ (ADR 0048,
+      in sdk-core), and Vitest's attachments, outside node_modules.
+    default: |
+      **/test-results/
+      **/.vitest/attachments/
+      !**/node_modules/**
 
 outputs:
   packs:
@@ -119,3 +131,16 @@ runs:
         path: ${{ runner.temp }}/release-packs
         if-no-files-found: error
         retention-days: 1
+
+    # When any step fails, the results show what failed without running it
+    # again, such as a visual test's diff images. They come from committed
+    # fixtures only. Vitest's attachments are in a hidden folder.
+    - name: Upload the test results
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: test-results
+        path: ${{ inputs.results }}
+        if-no-files-found: ignore
+        include-hidden-files: true
+        retention-days: 7
