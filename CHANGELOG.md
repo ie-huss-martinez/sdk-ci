@@ -2,6 +2,13 @@
 
 Each release of sdk-ci, newest first. A repository adopts one by pinning its full commit SHA, with the version in a comment; Dependabot proposes each new one. See the README for what major, minor and patch mean here.
 
+## v2.1.0
+
+**A feature:** when a verify job fails, its test results are uploaded, so a reviewer can see what failed without running it again. This includes the visual tests' expected, actual and diff images ([ADR 0048](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0048-visual-regression-for-sdk-editors.md), in sdk-core).
+
+- **`verify`** uploads them as the `test-results` artifact, kept for 7 days, when any of its steps fails. By default that's every `test-results/` folder, which is Playwright's, and `.vitest/attachments/`, which is Vitest's, outside `node_modules`. Callers outside the skeleton can choose other paths with the new `results` input.
+- **Adopting it:** update every sdk-ci pin to this release's commit SHA with `# v2.1.0`. The skeleton is unchanged from v2.0.0.
+
 ## v2.0.1
 
 **A fix:** with v2.0.0, a release's verify job failed at "Plan the release" with `jq: command not found`, because it runs in the browser test image ([ADR 0025](https://github.com/ie-huss-martinez/sdk-core/blob/main/docs/adr/0025-one-browser-test-image-in-one-place.md), in sdk-core), which has no `jq`. Nothing was published: the publish job refused, as it should.
