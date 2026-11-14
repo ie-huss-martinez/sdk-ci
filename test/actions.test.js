@@ -377,6 +377,28 @@ describe("the verify action", () => {
     expect(outputs.packs.value).toBe(expression("steps.packs.outputs.sha256"));
   });
 
+  it("uploads the test results when any step fails, and only then", async () => {
+    const { runs, inputs } = await action("verify");
+    const last = runs.steps.at(-1);
+    expect(last.name).toBe("Upload the test results");
+    expect(last.if).toBe("failure()");
+    expect(last.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
+    expect(last.with).toEqual({
+      name: "test-results",
+      path: expression("inputs.results"),
+      "if-no-files-found": "ignore",
+      "include-hidden-files": true,
+      "retention-days": 7,
+    });
+    // Playwright's results, including the visual tests' diffs (ADR 0048, in
+    // sdk-core), and Vitest's attachments, but nothing from node_modules.
+    expect(inputs.results.default.trim().split("\n")).toEqual([
+      "**/test-results/",
+      "**/.vitest/attachments/",
+      "!**/node_modules/**",
+    ]);
+  });
+
   it("locks the publint it runs", async () => {
     const lock = JSON.parse(
       await readFile(join(ROOT, "verify", "publint", "package-lock.json"), "utf8"),
